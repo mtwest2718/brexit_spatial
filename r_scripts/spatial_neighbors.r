@@ -3,6 +3,8 @@ library(readr)
 library(stringr)
 library(dplyr)
 library(spdep)
+library(sf)
+library(ggplot2)
 
 # set working path for this script by its current location
 rel_path <- getSrcDirectory(function(x) {x})
@@ -175,6 +177,62 @@ define_neighbors <- function(sn.ratios, symm=TRUE, w_type='pct', thresh=0.015) {
     return(output)
 }
 
+boundary_polygons <- function(data_loc) {
+    # full path of the zipped file that contains the open-GIS files
+    fn.full <- paste(
+        data_loc, 'boundaries', 'lad_dec16_sgc_boundaries.tar.gz', sep='/'
+    )
+    # temporary storage location for file
+    dir.shp <- normalizePath( paste(data_loc, 'temp', sep='/') )
+    untar(fn.full, exdir=dir.shp)
+
+    ## get spatial polygon data frame from GIS files
+    spdf <- read_sf(dsn = dir.shp)
+    # remove unpacked files
+    file.remove(
+        list.files(
+            dir.shp, full.names=TRUE, pattern='^(Local_Authority|GB_Hex)_'
+        )
+    )
+
+    return(spdf)
+}
+
+commuter_map <- function(sf.obj, bnds) {
+    # Reintroduce LAD codes into .sn struct
+    region.id.map <- data.frame(
+        id=1:dim(sf.obj$mat)[1], region=attr(sf.obj$sn, 'region.id')
+    )
+    neighbors <- sf.obj$sn %>%
+        inner_join(region.id.map, by=c('from'='id')) %>%
+        inner_join(region.id.map, by=c('to'='id')) %>%
+        mutate(from = region.x, to = region.y) %>%
+        dplyr::select(-matches('region'))
+
+    ## Define the centroid of each district
+    center <- st_centroid(bnds, of_largest_polygon=TRUE) %>%
+        dplyr::select(lad16cd, long, lat)
+    # connect centroid lat/long values for each district pain
+    NB <- neighbors %>%
+        inner_join(center, by=c('from'='lad16cd')) %>%
+        inner_join(center, by=c('to'='lad16cd'))
+
+    ## Connect the centroids on a blank England map
+    #   Line thickness is scaled by commuter flow rate
+    map.commute <- ggplot(data=bnds) +
+        theme_bw(base_family='serif', base_size=25) +
+        geom_sf(color='black', size=0.2) +
+        coord_sf(crs=4326, xlim=c(-6,2), ylim=c(50,56)) +
+        xlab("Longitude") +
+        ylab("Latitude") +
+        geom_segment(
+            data=NB,
+            mapping=aes(x=long.x, y=lat.x, xend=long.y, yend=lat.y),
+            colour='red', size=NB$weights*2
+        )
+    return(map.commute)
+}
+
 #----------------------------------------------------------------------------#
 ## Constructing neighbors based on commuter flow rate
 data_loc <- '/home/mtwest2718/Documents/research/brexit_spatial/data_sets'
@@ -185,4 +243,11 @@ lad.counts <- lad_commuters_2011(data_loc, msoa_codes)
 # compute percentage flow rates and filter list
 nb.pcts <- reduce_neighbors(lad.counts)
 # construct spatial objects with binary weights via spdep
-nb.bin <- define_neighbors(nb.pcts, symm=TRUE, w_type='binary', thresh=0.015)
+nb.obj <- define_neighbors(nb.pcts, symm=TRUE, w_type='pct', thresh=0.015)
+
+## Get boundary polygons for english districts
+english_bnds <- boundary_polygons(data_loc) %>%
+    filter(str_detect(lad16cd, '^E0'))
+# make commuter connection map
+map.commute <- commuter_map(nb.obj, english_bnds)
+
