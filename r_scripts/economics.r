@@ -192,3 +192,55 @@ council_cuts <- function(data_loc) {
 
     return(cuts.per_capita)
 }
+
+unemployment_lm <- function(data_loc) {
+    fn.lad <- paste(
+        data_loc, 'economic', 'model_unemployment_10-16.csv', sep='/'
+    )
+    # Districts with no data
+    rates <- read_csv(fn.lad, skip=7) %>%
+        select(-c(Jul09_Jun10, Conf_0910)) %>%
+        rename(lad15cd = LA_Code, lad15nm = LA_Name) %>%
+        filter(Jul10_Jun11 != '-') %>%
+        mutate_all(., ~replace(., .=='-', NA)) %>%
+        type_convert()
+
+    # NA values in CI's come from council districts, whose estimates are listed
+    #   as exact.
+    for (i in seq(4, dim(rates)[2], 2)) {
+        r <- rates[, i]
+        # Need uncertainty estimate so am using the smallest value across all
+        #   districts for that year.
+        min_ci <- min(r, na.rm=TRUE)
+        rates[, i] <- replace(r, is.na(r), min_ci)
+    }
+
+    # Rename data columns so they are usable in <time_series_lm>
+    colnames(rates) <- str_replace(
+        names(rates), '^Jul\\d+_Jun(\\d+)$', 'rate_est_20\\1'
+    )
+    colnames(rates) <- str_replace(
+        names(rates), '^Conf_\\d{2}(\\d{2})', 'rate_ci_20\\1'
+    )
+
+    ## Run normal linear regressoin for each unemployment time series
+    results.lm <- time_series_lm(rates, rs=1e-1)
+    # the values that will be used as covariates in logit regression later
+    results.covar <- results.lm %>%
+        transmute(
+            lad15cd = lad15cd,
+            Unemployment_last = c_last,
+            Unemployment_Change = m
+        ) %>%
+        mutate_if(is.numeric, round, digits=4)
+
+    # match first/last with appropriate year in column names
+    years <- unique(
+        str_replace(names(rates)[-c(1:2)], '^r\\w+_(\\d+)$', '\\1')
+    )
+    colnames(results.covar) <- str_replace_all(
+        names(results.covar), c('first' = years[1], 'last'=tail(years, n=1))
+    )
+
+    return(results.covar)
+}
