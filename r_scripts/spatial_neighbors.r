@@ -3,8 +3,11 @@ library(readr)
 library(stringr)
 library(dplyr)
 library(spdep)
+<<<<<<< HEAD
 library(sf)
 library(ggplot2)
+=======
+>>>>>>> a47ec74ae916d6890074f077b46862b79706d7cd
 
 # set working path for this script by its current location
 rel_path <- getSrcDirectory(function(x) {x})
@@ -15,7 +18,24 @@ path <- ifelse(
 )
 setwd(path)
 
+<<<<<<< HEAD
 source('ons_codes.r')
+=======
+#----------------------------------------------------------------------------#
+## Get best fit matching ONS codes linking MSOA11CD to LAD17CD
+msoa_to_lad <- function(data_loc) {
+    fn.ons <- paste(
+        data_loc, 'ons_codes',
+        'Middle_Layer_Super_Output_Area_2011_to_Ward_2017_Lookup_in_England_and_Wales.csv',
+        sep='/'
+    )
+    # Filter out unwanted Ward information and keep only codes
+    msoa_codes <- read_csv(fn.ons) %>%
+        dplyr::select(matches('^[^WF]+CD$'))
+
+    return(msoa_codes)
+}
+>>>>>>> a47ec74ae916d6890074f077b46862b79706d7cd
 
 #----------------------------------------------------------------------------#
 ## Get counts for commuters from 2011 census data at LAD level
@@ -164,6 +184,7 @@ define_neighbors <- function(sn.ratios, symm=TRUE, w_type='pct', thresh=0.015) {
     return(output)
 }
 
+<<<<<<< HEAD
 boundary_polygons <- function(data_loc) {
     # full path of the zipped file that contains the open-GIS files
     fn.full <- paste(
@@ -220,6 +241,8 @@ commuter_map <- function(sf.obj, bnds) {
     return(map.commute)
 }
 
+=======
+>>>>>>> a47ec74ae916d6890074f077b46862b79706d7cd
 #----------------------------------------------------------------------------#
 ## Constructing neighbors based on commuter flow rate
 data_loc <- '/home/mtwest2718/Documents/research/brexit_spatial/data_sets'
@@ -230,6 +253,7 @@ lad.counts <- lad_commuters_2011(data_loc, msoa_codes)
 # compute percentage flow rates and filter list
 nb.pcts <- reduce_neighbors(lad.counts)
 # construct spatial objects with binary weights via spdep
+<<<<<<< HEAD
 nb.obj <- define_neighbors(nb.pcts, symm=TRUE, w_type='pct', thresh=0.015)
 
 ## Get boundary polygons for english districts
@@ -238,3 +262,6 @@ english_bnds <- boundary_polygons(data_loc) %>%
 # make commuter connection map
 map.commute <- commuter_map(nb.obj, english_bnds)
 
+=======
+nb.bin <- define_neighbors(nb.pcts, symm=TRUE, w_type='binary', thresh=0.015)
+>>>>>>> a47ec74ae916d6890074f077b46862b79706d7cd
