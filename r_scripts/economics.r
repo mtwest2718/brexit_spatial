@@ -111,3 +111,84 @@ housing_tenure <- function(data_loc) {
         )
     return(home)
 }
+
+council_cuts <- function(data_loc) {
+    ## Adjust some of the local authority names so they match up properly
+    lad_codes <- lad_codes(data_loc) %>%
+        mutate(LAD17NM = str_remove_all(LAD17NM, '[,.]|\\s?C(ity|ounty)( of)?\\s?'))
+
+    fn.budget <- paste(
+        data_loc, "economic", 'Sheet_1_LASpendCuts-1.xlsx', sep='/'
+    )
+    # Getting real budget expenditure numbers from IFS report
+    cuts <- read_excel(
+        fn.budget, sheet='England - cuts by area', range='B4:F156'
+    ) %>%
+        rename(LANM = `Local authority`) %>%
+        select(matches('^(LANM|Total|Grant)')) %>%
+        mutate(LANM = str_replace(LANM, '\\&', 'and')) %>%
+        mutate(LANM = str_remove_all(
+            LANM, '\\s?UA$|[,.]|\\s?(City|County)( of)?\\s?')
+        ) %>%
+        mutate(LANM = str_replace(LANM, 'The (Medway) Towns', '\\1')) %>%
+        mutate(LANM = str_replace(
+            LANM, '(Telford and) the( Wrekin)', '\\1\\2')
+        ) %>%
+        mutate(LANM = str_replace(LANM, '(Middlesb)o(rough)', '\\1\\2'))
+    ## NOTE: Really wish researchers would just be consistent and use ONS codes
+    colnames(cuts)[-1] <- c('Expenditure_2016', 'Expenditure_2009',
+                            'Grant_Dependence')
+
+    # Some of the budget numbers are for aggregate shire counties
+    cty <- lad_codes %>%
+        inner_join(cuts, by=c('CTY17NM' = 'LANM'))
+    lad <- lad_codes %>%
+        inner_join(cuts, by=c('LAD17NM' = 'LANM'))
+
+    ## Append total population numbers for 2009 and 2016 for authorities
+    # Unpack population files from gzipped tarball
+    dir.temp <- paste(data_loc, 'temp', sep='/')
+    fn.pop_tar <- paste(
+        data_loc, 'demographics',
+        'pop-count_birth-nationality_ew.tar.gz',sep='/'
+    )
+    untar(fn.full, exdir=dir.temp)
+    # Select only two years from the list
+    years <- c('2009', '2016')
+    for (y in years) {
+        fn.pop <- paste(
+            data_loc, 'temp',
+            paste0('pop-count_birth-nationality_year', y, '_EW.xls'),
+            sep='/'
+        )
+        pop <- get_yearly_img(fn.pop) %>%
+            rename(CD = LAD17CD) %>%
+            select(matches('^(CD|All_est)'))
+        colnames(pop)[2] <- paste('total_pop', y, sep='_')
+        # match population estimates to local authority codes
+        lad <- lad %>% inner_join(pop, by=c('LAD17CD'='CD'))
+        cty <- cty %>% inner_join(pop, by=c('CTY17CD'='CD'))
+    }
+    # remove files from temp folder
+    file.remove(
+        list.files(dir.temp, full.names=TRUE, pattern='^pop-count_')
+    )
+
+    # EPP: Expenditure Per Person (in that year)
+    cuts.per_capita <- bind_rows(lad, cty) %>%
+        select(matches('^(LAD|Expenditure|total_pop|Grant)')) %>%
+        mutate(
+            Authority_EPP_2009 = Expenditure_2009/total_pop_2009,
+            Authority_EPP_2016 = Expenditure_2016/total_pop_2016
+        ) %>%
+        mutate(
+            Authority_EPP_Change = Authority_EPP_2016/Authority_EPP_2009 - 1
+        ) %>%
+        mutate_if(is.numeric, round, digits=3) %>%
+        select(
+            LAD17CD, LAD17NM,
+            Authority_EPP_2016, Authority_EPP_Change, Grant_Dependence
+        )
+
+    return(cuts.per_capita)
+}
