@@ -15,20 +15,7 @@ path <- ifelse(
 )
 setwd(path)
 
-#----------------------------------------------------------------------------#
-## Get best fit matching ONS codes linking MSOA11CD to LAD17CD
-msoa_to_lad <- function(data_loc) {
-    fn.ons <- paste(
-        data_loc, 'ons_codes',
-        'Middle_Layer_Super_Output_Area_2011_to_Ward_2017_Lookup_in_England_and_Wales.csv',
-        sep='/'
-    )
-    # Filter out unwanted Ward information and keep only codes
-    msoa_codes <- read_csv(fn.ons) %>%
-        dplyr::select(matches('^[^WF]+CD$'))
-
-    return(msoa_codes)
-}
+source('ons_codes.r')
 
 #----------------------------------------------------------------------------#
 ## Get counts for commuters from 2011 census data at LAD level
