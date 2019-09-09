@@ -22,6 +22,7 @@ source('ons_codes.r')
 source('elections.r')
 source('demographics.r')
 source('economics.r')
+source('spatial_neighbors.r')
 
 # Where the data files are located
 data_loc <- '/home/mtwest2718/Documents/research/brexit_spatial/data_sets'
@@ -47,7 +48,7 @@ nb.pcts <- reduce_neighbors(lad.counts)
 # percentages for commuters who work in the district they reside
 local_worker_pct <- nb.pcts %>%
     filter(cd.work == cd.reside) %>%
-    rename(ladcd == cd.work) %>%
+    rename(ladcd = cd.work) %>%
     select(ladcd, r_pct, w_pct)
 
 # construct spatial objects with binary weights via spdep
@@ -58,7 +59,7 @@ english_bnds <- boundary_polygons(data_loc) %>%
     select(-c(lad16nm)) %>%
     rename(ladcd = lad16cd)
 
-## Austerity Costs -------------------------------------------------------- ##
+## Economics at LAD Level ------------------------------------------------- ##
 # Benefit cuts in pounds per year per person
 benefit_cuts <- welfare_cuts(data_loc) %>%
     rename(ladcd = lad15cd)
@@ -67,23 +68,52 @@ spending_cuts <- council_cuts(data_loc) %>%
     select(-c(LAD17NM)) %>%
     rename(ladcd = LAD17CD)
 
-## LAD Avg Deprivation Stats ---------------------------------------------- ##
+# LAD Avg Deprivation Stats
 depriv_stats <- deprivation_avgs(data_loc) %>%
     rename(ladcd = lad13cd)
 
-## Price of housing ------------------------------------------------------- ##
+# % of pop that own's their home, privately rents or socially rents
 housing <- housing_tenure(data_loc) %>%
     rename(ladcd = lad11cd)
 
-## Employment measures ---------------------------------------------------- ##
-unemployment <- unemployment_lm(data_loc) %>%
+# Change in the unemployment figures for each district
+unemployment <- unemployment_lm(data_loc)
+
+## Demographics at LAD level ---------------------------------------------- ##
+# % of pop in voting-age brackets: 18-29, 30-44, 45-64, 65+
+age <- age_cohorts(data_loc) %>%
+    select(-c(lad16nm)) %>%
+    rename(ladcd = lad16cd)
+
+# % of the working-age pop with a given highest level of formal qualifications
+qualifications <- quals_proportions(data_loc) %>%
+    select(-c(lad15nm)) %>%
+    rename(ladcd = lad15cd)
+
+# % of British nationals that identify as English &/or British
+englishness <- english_identity(data_loc) %>%
     rename(ladcd = lad15cd)
 
 ####----------------------------------------------------------------------####
 #                    Combine data into a single structure                    #
 ####----------------------------------------------------------------------####
 data <- list(
-    english_lads, votes, nb.pcts, local_worker_pct, english_bnds,
-    benefit_cuts, spending_cuts, depriv_stats, housing, unemployment
+    english_lads, votes, local_worker_pct, benefit_cuts,
+    spending_cuts, depriv_stats, housing, unemployment, age,
+    qualifications, englishness,
+    english_bnds
 ) %>%
-    purrr::reduce(inner_join, by='ladcd')
+    purrr::reduce(inner_join, by='ladcd') %>%
+    mutate(
+        voter_density = Electorate/(st_areasha/1e6)
+    )
+
+####----------------------------------------------------------------------####
+#                           Linear model components                          #
+####----------------------------------------------------------------------####
+
+# Response and Design matrix
+data.XY <- data[ , c(9:46,56)]
+# Centering and scaling the design matrix for easier variable comparison
+data.xy <- data.XY
+data.xy[ ,-c(1:3)] <- data.xy[ ,-c(1:3)] %>% scale(center=TRUE, scale=TRUE)
