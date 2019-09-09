@@ -1,5 +1,6 @@
 library(readxl)
 library(purrr)
+library(dplyr)
 
 source('ons_codes.r')
 source('demographics.r')
@@ -72,17 +73,18 @@ deprivation_avgs <- function(data_loc) {
 welfare_cuts <- function(data_loc) {
     ## Just keeping the "Total Estimated Annual Loss" due to Tory welfare
     #   "reforms" through 2016
-    fn.welfare <- paste(data_loc, 'economic',
+    fn.welfare <- paste(
+        data_loc, 'economic',
         'Welfare_Reform_Beatty-Fothergill_2016.xlsx', sep='/'
     )
     cuts <- read_excel(
         fn.welfare, sheet='DATABASE PRE 2015 REFORMS', n_max=400, skip=1
     ) %>%
-        select(matches('^X__1|^Financial .+__10$'))
+        select(matches('^\\.{3}1|^Financial .+35$'))
     # rename columns
     colnames(cuts) <- c('lad15cd', 'welfare_loss_2016_APP')
 
-    return(loss)
+    return(cuts)
 }
 
 ## Percentage of population that owns their home
@@ -92,9 +94,10 @@ housing_tenure <- function(data_loc) {
     )
     # get both columns of home ownership (with and without mortage)
     tenure <- read_excel(
-        fn.home, sheet='KS402EW_Percentages', range='A11:G465'
+        fn.home, sheet='KS402EW_Percentages', range='A11:L465'
     ) %>%
         select(matches('Area code|^(Owned|Social|Private)')) %>%
+        filter(!is.na(`Area code`)) %>%
         type_convert()
 
     colnames(tenure) <- c(
@@ -140,10 +143,8 @@ council_cuts <- function(data_loc) {
                             'Grant_Dependence')
 
     # Some of the budget numbers are for aggregate shire counties
-    cty <- lad_codes %>%
-        inner_join(cuts, by=c('CTY17NM' = 'LANM'))
-    lad <- lad_codes %>%
-        inner_join(cuts, by=c('LAD17NM' = 'LANM'))
+    cty <- lad_codes %>% inner_join(cuts, by=c('CTY17NM' = 'LANM'))
+    lad <- lad_codes %>% inner_join(cuts, by=c('LAD17NM' = 'LANM'))
 
     ## Append total population numbers for 2009 and 2016 for authorities
     # Unpack population files from gzipped tarball
@@ -152,7 +153,7 @@ council_cuts <- function(data_loc) {
         data_loc, 'demographics',
         'pop-count_birth-nationality_ew.tar.gz',sep='/'
     )
-    untar(fn.full, exdir=dir.temp)
+    untar(fn.pop_tar, exdir=dir.temp)
     # Select only two years from the list
     years <- c('2009', '2016')
     for (y in years) {
@@ -200,7 +201,7 @@ unemployment_lm <- function(data_loc) {
     # Districts with no data
     rates <- read_csv(fn.lad, skip=7) %>%
         select(-c(Jul09_Jun10, Conf_0910)) %>%
-        rename(lad15cd = LA_Code, lad15nm = LA_Name) %>%
+        rename(ladcd = LA_Code, ladnm = LA_Name) %>%
         filter(Jul10_Jun11 != '-') %>%
         mutate_all(., ~replace(., .=='-', NA)) %>%
         type_convert()
@@ -228,7 +229,7 @@ unemployment_lm <- function(data_loc) {
     # the values that will be used as covariates in logit regression later
     results.covar <- results.lm %>%
         transmute(
-            lad15cd = lad15cd,
+            ladcd = ladcd,
             Unemployment_last = c_last,
             Unemployment_Change = m
         ) %>%

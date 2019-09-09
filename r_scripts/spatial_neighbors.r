@@ -6,15 +6,6 @@ library(spdep)
 library(sf)
 library(ggplot2)
 
-# set working path for this script by its current location
-rel_path <- getSrcDirectory(function(x) {x})
-path <- ifelse(
-    rel_path != '',
-    paste(normalizePath(rel_path), 'r_scripts', sep='/'),
-    dirname(rstudioapi::getActiveDocumentContext()$path)
-)
-setwd(path)
-
 source('ons_codes.r')
 
 #----------------------------------------------------------------------------#

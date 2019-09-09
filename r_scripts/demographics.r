@@ -133,7 +133,7 @@ english_identity <- function(data_loc){
 #----------------------------------------------------------------------------#
 ## Run linear regression using R's LM on time series for each LAD
 time_series_lm <- function(df, rs=1e-3) {
-    results <- df %>% select(LAD17CD) %>%
+    results <- df %>% select(ladcd) %>%
         mutate(c_first = NA, c_last = NA, m = NA)
 
     # split count estimates from uncertainty
@@ -169,7 +169,7 @@ get_yearly_img <- function(fn) {
     people <- read_excel(fn, sheet='1.1', range="A9:W383") %>%
         rename(LAD17CD = `Area Code10`, LAD17NM = `Area Name`) %>%
         mutate(LAD17NM = str_remove(LAD17NM, '\\d+$')) %>%
-        select(-c(X__1, X__2, X__3)) %>%
+        select(-matches('^\\.{3}\\d+')) %>%
         filter(!is.na(LAD17NM))
 
     # Rename columns
@@ -185,7 +185,7 @@ get_yearly_img <- function(fn) {
     people <- people %>%
         select(matches('^(LAD17CD|All_|(non)?EU_)')) %>%
         filter(All_ci != ':') %>%
-        mutate_if(is.character, funs(str_replace(., '^[\\.c]', 'NA'))) %>%
+        mutate_if(is.character, ~str_replace(., '^[\\.c]', 'NA')) %>%
         type_convert()
 
     ## Fill in empty cells with a low estimate (< 1) based on total population
