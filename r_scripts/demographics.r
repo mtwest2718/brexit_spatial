@@ -3,6 +3,8 @@ library(readxl)
 library(stringr)
 library(dplyr)
 
+source('ons_codes.r')
+
 quals_proportions <- function(data_loc){
     # specify sub-directory of desired data
     sub_dir <-
@@ -167,10 +169,10 @@ time_series_lm <- function(df, rs=1e-3) {
 get_yearly_img <- function(fn) {
     # Only keeping English LADs
     people <- read_excel(fn, sheet='1.1', range="A9:W383") %>%
-        rename(LAD17CD = `Area Code10`, LAD17NM = `Area Name`) %>%
-        mutate(LAD17NM = str_remove(LAD17NM, '\\d+$')) %>%
+        rename(ladcd = `Area Code10`, ladnm = `Area Name`) %>%
+        mutate(ladnm = str_remove(ladnm, '\\d+$')) %>%
         select(-matches('^\\.{3}\\d+')) %>%
-        filter(!is.na(LAD17NM))
+        filter(!is.na(ladnm))
 
     # Rename columns
     loc = c(
@@ -183,7 +185,7 @@ get_yearly_img <- function(fn) {
     ## Remove the UK & EU subset columns
     # NOTE ':' occur in the City of London and Isle of Scilly rows
     people <- people %>%
-        select(matches('^(LAD17CD|All_|(non)?EU_)')) %>%
+        select(matches('^(ladcd|All_|(non)?EU_)')) %>%
         filter(All_ci != ':') %>%
         mutate_if(is.character, ~str_replace(., '^[\\.c]', 'NA')) %>%
         type_convert()
@@ -206,19 +208,21 @@ get_yearly_img <- function(fn) {
 
 immigrant_demography_lm <- function(data_loc) {
     # Starting with ONS codes for LADs
-    lad_codes <- lad_codes(data_loc) %>% select(LAD17CD, LAD17NM)
+    lad_codes <- lad_codes(data_loc) %>%
+        select(LAD17CD, LAD17NM) %>%
+        rename(ladcd = LAD17CD, ladnm = LAD17NM)
 
     # storage for all years
     pop <- lad_codes
-    years <- as.character(2005:2015)
     # Unpack population files from gzipped tarball
     dir.temp <- paste(data_loc, 'temp', sep='/')
     fn.pop_tar <- paste(
         data_loc, 'demographics',
         'pop-count_birth-nationality_ew.tar.gz',sep='/'
     )
-    untar(fn.full, exdir=dir.temp)
+    untar(fn.pop_tar, exdir=dir.temp)
 
+    years <- as.character(2005:2015)
     ## Loop over yearly immigration count files
     for (i in 1:length(years)) {
         fn.people <- paste(
@@ -233,7 +237,7 @@ immigrant_demography_lm <- function(data_loc) {
             sep='_'
         )
         # append year's columns to existing storage tibble
-        pop <- pop %>% inner_join(pop.year, by='LAD17CD')
+        pop <- pop %>% inner_join(pop.year, by='ladcd')
     }
     # remove files from temp folder
     file.remove(
@@ -247,7 +251,7 @@ immigrant_demography_lm <- function(data_loc) {
     ## Separate counts into immigrant groups and run individual regressions
     for (g in groups) {
         # which columns one needs to keep to run the regressions for a group
-        col_regex <- paste('^LAD17CD', g, sep='|')
+        col_regex <- paste('^ladcd', g, sep='|')
         pop.group <- pop %>% select(matches(col_regex))
         # regression results per LAD
         reg.group <- time_series_lm(pop.group, rs=1e-3)
@@ -256,13 +260,13 @@ immigrant_demography_lm <- function(data_loc) {
         tag <- str_remove_all(g, '[_^]')
         colnames(reg.group)[-1] <- paste(names(reg.group)[-1], tag, sep='_')
 
-        reg.results <- reg.results %>% inner_join(reg.group, by='LAD17CD')
+        reg.results <- reg.results %>% inner_join(reg.group, by='ladcd')
     }
 
     ## Computing all the summary statistics to be used as covariates
     results.covar <- reg.results %>%
         transmute(
-            LAD17CD = LAD17CD, LAD17NM = LAD17NM,
+            ladcd = ladcd, ladnm = ladnm,
             PopPct_EU_first = c_first_EU/c_first_All,
             PopPct_nonEU_first = c_first_nonEU/c_first_All,
             PopPct_EU_last = c_last_EU/c_last_All,

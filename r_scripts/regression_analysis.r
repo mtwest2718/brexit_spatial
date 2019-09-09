@@ -94,13 +94,16 @@ qualifications <- quals_proportions(data_loc) %>%
 englishness <- english_identity(data_loc) %>%
     rename(ladcd = lad15cd)
 
+# % of population that are EU & non-EU immigrants and change in group size
+immigrants <- immigrant_demography_lm(data_loc) %>% select(-c(ladnm))
+
 ####----------------------------------------------------------------------####
 #                    Combine data into a single structure                    #
 ####----------------------------------------------------------------------####
 data <- list(
-    english_lads, votes, local_worker_pct, benefit_cuts,
-    spending_cuts, depriv_stats, housing, unemployment, age,
-    qualifications, englishness,
+    english_lads, votes, local_worker_pct, benefit_cuts, depriv_stats,
+    spending_cuts, housing, unemployment, age, qualifications, englishness, 
+    immigrants,
     english_bnds
 ) %>%
     purrr::reduce(inner_join, by='ladcd') %>%
@@ -113,7 +116,14 @@ data <- list(
 ####----------------------------------------------------------------------####
 
 # Response and Design matrix
-data.XY <- data[ , c(9:46,56)]
+data.XY <- data[ , c(9:52,62)]
 # Centering and scaling the design matrix for easier variable comparison
 data.xy <- data.XY
 data.xy[ ,-c(1:3)] <- data.xy[ ,-c(1:3)] %>% scale(center=TRUE, scale=TRUE)
+
+# simple logistic model for voter turnout
+model.glm <- glm(
+    data=data.xy, family='binomial',
+    formula=cbind(Leave+Remain, Electorate-Leave-Remain) ~ . 
+)
+leverage <- hatvalues(model.glm)
