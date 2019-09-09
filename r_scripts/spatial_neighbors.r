@@ -19,7 +19,7 @@ source('ons_codes.r')
 
 #----------------------------------------------------------------------------#
 ## Get counts for commuters from 2011 census data at LAD level
-lad_commuters_2011 <- function(data_loc, msoa_codes) {
+lad_commuters_2011 <- function(data_loc) {
     fn.commute <- paste(
         data_loc, 'boundaries', 'wf01ew_msoa_v1.csv.gz', sep='/'
     )
@@ -35,6 +35,8 @@ lad_commuters_2011 <- function(data_loc, msoa_codes) {
     ) %>%
         filter_at(vars(c(X1, X2)), all_vars(str_detect(., '^E02'))) %>%
         rename(msoa_count = X3)
+    # ONS code mapping from file
+    msoa_codes <- msoa_to_lad(data_loc)
 
     ## Aggregate counts to local authority level (LAD)
     lad.agg <- commute %>%
@@ -219,21 +221,3 @@ commuter_map <- function(sf.obj, bnds) {
         )
     return(map.commute)
 }
-
-#----------------------------------------------------------------------------#
-## Constructing neighbors based on commuter flow rate
-data_loc <- '/home/mtwest2718/Documents/research/brexit_spatial/data_sets'
-# ONS code mapping from file
-msoa_codes <- msoa_to_lad(data_loc)
-# Get commuting numbers on a LAD->LAD basis
-lad.counts <- lad_commuters_2011(data_loc, msoa_codes)
-# compute percentage flow rates and filter list
-nb.pcts <- reduce_neighbors(lad.counts)
-# construct spatial objects with binary weights via spdep
-nb.obj <- define_neighbors(nb.pcts, symm=TRUE, w_type='pct', thresh=0.015)
-
-## Get boundary polygons for english districts
-english_bnds <- boundary_polygons(data_loc) %>%
-    filter(str_detect(lad16cd, '^E0'))
-# make commuter connection map
-map.commute <- commuter_map(nb.obj, english_bnds)
