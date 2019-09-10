@@ -6,9 +6,6 @@ library(dplyr)
 source('ons_codes.r')
 
 quals_proportions <- function(data_loc){
-    # specify sub-directory of desired data
-    sub_dir <-
-
     fn.quals <- paste(
         data_loc, 'demographics', 'gb_2015gcse_counts.csv', sep='/'
     )
@@ -284,6 +281,154 @@ immigrant_demography_lm <- function(data_loc) {
         select(-c(PopPct_EU_first, PopPct_nonEU_first, Pop_Change_first)) %>%
         mutate_if(is.numeric, round, digits=5)
 
+    # match first/last with appropriate year in column names
+    colnames(results.covar) <- str_replace_all(
+        names(results.covar),
+        c('first' = years[1], 'last' = tail(years, n=1))
+    )
+
+    return(results.covar)
+}
+
+####----------------------------------------------------------------------####
+#                Change in domestic English Racial Demography                #
+####----------------------------------------------------------------------####
+
+## Load and clean a population subgroup timeseries file
+process_subgroup <- function(fn) {
+    # Load english districts except Isle of Scilly & City of London
+    people <- read_csv(fn, skip=7, n_max=327) %>%
+        rename(ladcd = mnemonic) %>%
+        filter(
+            str_detect(ladcd, '^E0') &
+            !str_detect(ladcd, '^E0(9000001|6000053)')
+        )
+
+    years <- sort( unique(str_extract(names(people), '(\\d{4})')) )
+    ## Fill all the character placeholders in table cells
+    for (i in 1:length(years)) {
+        col_idx <- (-1+4*i):(2+4*i)
+
+        sngl.year <- people[ ,col_idx]
+        colnames(sngl.year) <- c('count', 'total', 'prop', 'ci')
+        # work through sequence of columns in a single year
+        sngl.year <- sngl.year %>%
+            mutate(
+                prop = str_replace(prop, '^[!~*#-]', '0.2'),
+                ci = str_replace(ci, '^[!~*#-]', prop)
+            ) %>%
+            mutate(
+                ci = str_replace(ci, '100', '1')
+            ) %>%
+            mutate_all(., ~str_replace(., '^[!~*#-]', 'NA')) %>%
+            type_convert() %>%
+            mutate(ci = ci/100 * total)
+
+        empty.count <- is.na(sngl.year$count)
+        if (sum(empty.count) > 0) {
+            ## fill in the gaps in counts based on rounded proportions
+            sngl.year[empty.count, 1] <- sngl.year[empty.count, ] %>%
+                transmute(count = total*prop/100)
+        }
+        ## return year values to full data.frame
+        people[ ,col_idx] <- sngl.year
+    }
+
+    # Drop unnecessary columns
+    people <- people %>%
+        select(matches('^(lad|Numer|Conf)'))
+    # rename population columns
+    colnames(people)[-1] <- paste(
+        rep(c('subgroup_est','subgroup_ci'), times=length(years)),
+        rep(years, each=2),
+        sep='_'
+    )
+    return(people)
+}
+
+ethnic_demography_lm <- function(data_loc) {
+    ## Starting with ONS codes for LADs, dropping 'The City' and Scilly
+    # Starting with ONS codes for LADs
+    lad_codes <- lad_codes(data_loc) %>%
+        select(LAD17CD, LAD17NM) %>%
+        rename(ladcd = LAD17CD, ladnm = LAD17NM) %>%
+        filter(!str_detect(ladcd, '^E0(9000001|6000053)'))
+
+    ## Load in all ethnicity/uk-national data
+    subgroup <- paste(
+        rep(c('white', 'bame'), times=2),
+        rep(c('uk', 'non_uk'), each=2), sep='_'
+    )
+    # temp storage for combined counts across categories
+    all_grp <- data.frame()
+
+    reg.results <- lad_codes
+    # looping over files
+    for (sg in subgroup) {
+        fn.sub <- paste(
+            data_loc, 'demographics',
+            paste('nomis', sg,'0515.csv', sep='_'), sep='/'
+        )
+        sub_pop <- process_subgroup(fn.sub)
+
+        # Only adding UK-born results immediately into table
+        if (endsWith(sg, 'e_uk')) {
+            if (sg == 'white_uk') {
+                results <- time_series_lm(sub_pop, rs=1e-3)
+                colnames(results)[-1] <- paste(
+                    names(results)[-1], 'wUK', sep='_'
+                )
+            } else {
+                results <- time_series_lm(sub_pop, rs=1e-2)
+                colnames(results)[-1] <- paste(
+                    names(results)[-1], 'bameUK', sep='_'
+                )
+            }
+            reg.results <- reg.results %>% inner_join(results, by='ladcd')
+        }
+
+        # Combining counts for all residents in England
+        if (dim(all_grp)[1] == 0) {
+            all_grp <- sub_pop
+        } else {
+            # sum of estimates
+            not_est <- seq(1,23,2)
+            all_grp[,-c(not_est)] <- all_grp[,-c(not_est)] + sub_pop[,-c(not_est)]
+            # quadrature some of CIs
+            not_ci <- c(1, seq(2,23,2))
+            all_grp[ ,-c(not_ci)] <- sqrt(
+                all_grp[ ,-c(not_ci)]^2 + sub_pop[ ,-c(not_ci)]^2
+            )
+        }
+    }
+
+    ## Running regression for all residents
+    results <- time_series_lm(all_grp, rs=1e-3)
+    colnames(results)[-1] <- paste(names(results)[-1], 'all', sep='_')
+    reg.results <- reg.results %>% inner_join(results, by='ladcd')
+
+    ## Computing all the summary statistics to be used as covariates
+    results.covar <- reg.results %>%
+        transmute(
+            ladcd = ladcd, ladnm = ladnm,
+            PopPct_wUK_first = c_first_wUK/c_first_all,
+            PopPct_bameUK_first = c_first_bameUK/c_first_all,
+            PopPct_wUK_last = c_last_wUK/c_last_all,
+            PopPct_bameUK_last = c_last_bameUK/c_last_all,
+            Pop_wUK_Change_first = m_wUK/c_first_wUK,
+            Pop_bameUK_Change_first = m_bameUK/c_first_bameUK,
+            Pop_Change_first = m_all/c_first_all
+        ) %>%
+        mutate(
+            PopPct_wUK_Change = PopPct_wUK_first *
+                (Pop_wUK_Change_first - Pop_Change_first),
+            PopPct_bameUK_Change = PopPct_bameUK_first *
+                (Pop_bameUK_Change_first - Pop_Change_first)
+        ) %>%
+        select(-c(PopPct_wUK_first, PopPct_bameUK_first, Pop_Change_first)) %>%
+        mutate_if(is.numeric, round, digits=5)
+
+    years <- sort( unique(str_extract(names(all_grp), '(\\d{4})')) )
     # match first/last with appropriate year in column names
     colnames(results.covar) <- str_replace_all(
         names(results.covar),

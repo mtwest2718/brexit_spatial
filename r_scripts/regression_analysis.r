@@ -67,14 +67,14 @@ benefit_cuts <- welfare_cuts(data_loc) %>%
 spending_cuts <- council_cuts(data_loc) %>%
     select(-c(LAD17NM)) %>%
     rename(ladcd = LAD17CD)
+# Change in disposable income at LAD level
+disp_income <- disposable_income_lm(data_loc)
 
 # LAD Avg Deprivation Stats
-depriv_stats <- deprivation_avgs(data_loc) %>%
-    rename(ladcd = lad13cd)
+depriv_stats <- deprivation_avgs(data_loc) %>% rename(ladcd = lad13cd)
 
 # % of pop that own's their home, privately rents or socially rents
-housing <- housing_tenure(data_loc) %>%
-    rename(ladcd = lad11cd)
+housing <- housing_tenure(data_loc) %>% rename(ladcd = lad11cd)
 
 # Change in the unemployment figures for each district
 unemployment <- unemployment_lm(data_loc)
@@ -91,32 +91,37 @@ qualifications <- quals_proportions(data_loc) %>%
     rename(ladcd = lad15cd)
 
 # % of British nationals that identify as English &/or British
-englishness <- english_identity(data_loc) %>%
-    rename(ladcd = lad15cd)
+englishness <- english_identity(data_loc) %>% rename(ladcd = lad15cd)
 
 # % of population that are EU & non-EU immigrants and change in group size
 immigrants <- immigrant_demography_lm(data_loc) %>% select(-c(ladnm))
+# % of population that are British born and either white or bame, as well
+#   as change in group size.
+ethnicity <- ethnic_demography_lm(data_loc) %>% select(-c(ladnm))
 
 ####----------------------------------------------------------------------####
 #                    Combine data into a single structure                    #
 ####----------------------------------------------------------------------####
 data <- list(
     english_lads, votes, local_worker_pct, benefit_cuts, depriv_stats,
-    spending_cuts, housing, unemployment, age, qualifications, englishness, 
-    immigrants,
+    spending_cuts, housing, unemployment, age, qualifications, englishness,
+    immigrants, ethnicity, disp_income,
     english_bnds
 ) %>%
     purrr::reduce(inner_join, by='ladcd') %>%
     mutate(
-        voter_density = Electorate/(st_areasha/1e6)
-    )
+        voter_density = Electorate/(st_areasha/1e6),
+        welfare_loss_vs_Income = welfare_loss_2016_APP/Disposable_Income_2016,
+        LAD_EPP_vs_Income = Authority_EPP_2016/Disposable_Income_2016
+    ) %>%
+    select(-c(welfare_loss_2016_APP, Authority_EPP_2016))
 
 ####----------------------------------------------------------------------####
 #                           Linear model components                          #
 ####----------------------------------------------------------------------####
 
 # Response and Design matrix
-data.XY <- data[ , c(9:52,62)]
+data.XY <- data[ , c(9:58,68:70)]
 # Centering and scaling the design matrix for easier variable comparison
 data.xy <- data.XY
 data.xy[ ,-c(1:3)] <- data.xy[ ,-c(1:3)] %>% scale(center=TRUE, scale=TRUE)
@@ -124,6 +129,6 @@ data.xy[ ,-c(1:3)] <- data.xy[ ,-c(1:3)] %>% scale(center=TRUE, scale=TRUE)
 # simple logistic model for voter turnout
 model.glm <- glm(
     data=data.xy, family='binomial',
-    formula=cbind(Leave+Remain, Electorate-Leave-Remain) ~ . 
+    formula=cbind(Leave+Remain, Electorate-Leave-Remain) ~ .
 )
 leverage <- hatvalues(model.glm)

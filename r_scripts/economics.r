@@ -245,3 +245,201 @@ unemployment_lm <- function(data_loc) {
 
     return(results.covar)
 }
+
+####----------------------------------------------------------------------####
+#                           Changes in Median Income                         #
+####----------------------------------------------------------------------####
+
+## Yearly median income & tax data
+process_yearly_inc <- function(fn, codes, cpih, costs=FALSE) {
+    yearly <- read_csv(fn) %>%
+        select(matches('^(area|median)_?')) %>%
+        filter(!is.na(`area_name`) & str_detect(`median`, '\\d')) %>%
+        type_convert()
+
+    # Compute the half-width of the disposable income confidence intervals
+    disposable <- yearly %>%
+        mutate(
+            income_est = median - median_tax,
+            income_ci = sqrt(
+                (median_high_ci-median_low_ci)^2/4 +
+                (median_tax_high_ci-median_tax_low_ci)^2/4
+            ),
+            lc_name = tolower(area_name)
+        ) %>%
+        dplyr::select(matches('_name$|^(income|tax)(_ci)?'))
+
+    ## Compute the regional discretionary income if Costs-of-Living are given
+    if (any(costs != FALSE)) {
+        income <- codes %>%
+            mutate(lc_name = tolower(GOR10NM)) %>%
+            full_join(disposable, by='lc_name') %>%
+            inner_join(costs, by='GOR10CD') %>%
+            mutate(income_est = income_est/52 - weekly_col) %>%
+            mutate_if(is.numeric, round, digits=2) %>%
+            select(matches('^LAD|income_est|weekly_col'))
+    } else {
+        # otherwise just stick with LAD level disposable income
+        disposable <- disposable %>%
+            mutate(lc_name = str_remove_all(
+                lc_name, '\\.| ua$|( metropolitan)? county| towns')
+            ) %>%
+            mutate(lc_name = str_replace_all(lc_name, '-', ' ')) %>%
+            mutate(
+                lc_name = str_replace(lc_name, '(south buck)inghamshire', '\\1s')
+            )
+        # NOTE: more manipulation of the district names so they match up with they
+        #   official ones from the ONS. South Buckinghamshire is officialy called
+        #   'South Bucks'.
+
+        ## Match median income and tax estimates with correct ONS LAD codes
+        income <- codes %>%
+            inner_join(disposable, by=c("lc_name"))
+    }
+
+    ## Apply CPIH scaling
+    income <- income %>% mutate_if(is.numeric, funs(. / cpih))
+
+    return(income)
+}
+
+indexed_april_cpih <- function(data_loc) {
+    ## load consumer price index (sans housing) CPIH
+    fn.cpih <- paste(
+        data_loc, 'economic', 'cpih-cumm-series_20190609_MM23_L522.csv', sep='/'
+    )
+    cpih <- read_csv(fn.cpih, skip=6) %>%
+        filter(str_detect(month, '^201[1-6] APR$'))
+    # set baseline value to be April 2016
+    cpih$cpih_value <- cpih$cpih_value/tail(cpih$cpih_value, n=1)
+
+    return(cpih)
+}
+
+disposable_income_lm <- function(data_loc) {
+    # NOTE: Changing the names to lower case, as well as the manipulation of
+    #   individual characters and district prefixes is because I have to match
+    #   districts by name and not code. The names have just enough differences
+    #   so that exact matching will miss a number of districts.
+    lad_codes <- lad_codes(data_loc) %>%
+        select(LAD17CD, LAD17NM) %>%
+        mutate(lc_name = tolower(LAD17NM)) %>%
+        mutate(lc_name = str_remove_all(
+            lc_name, ", (city|county) of|\\'|\\.")
+        ) %>%
+        mutate(lc_name = str_replace_all(lc_name, '-', ' '))
+
+    ## load consumer price index (with housing) CPIH
+    cpih <- indexed_april_cpih(data_loc)
+
+    # storage structure for all years
+    income.all_yrs <- lad_codes
+    ## Looping from 2010-2011 through 2015-2016 tax years
+    # NOTE: End of tax year is in April in the UK.
+    years <- seq(11,16)
+    for (i in 1:length(years)) {
+        fn.inc <- paste(
+            data_loc, 'economic',
+            paste0('NS_Table_3_14a_', years[i]-1, years[i], '_total_inc.csv'),
+            sep='/'
+        )
+        income.yrly <- process_yearly_inc(
+            fn.inc, lad_codes, cpih$cpih_value[i]
+        )
+
+        # mark income columns with tax year
+        colnames(income.yrly)[5:6] <- paste(
+            names(income.yrly)[5:6], rep(years[i], 2), sep='_'
+        )
+
+        # append to existing storage
+        income.all_yrs <- income.all_yrs %>%
+            inner_join(income.yrly, by=c('LAD17CD', 'LAD17NM'))  %>%
+            select(matches('^(LAD|income)'))
+    }
+
+    #------------------------------------------------------------------------#
+    ## Linear Regression for each LAD's income time series
+    results.lm <- time_series_lm(
+        income.all_yrs %>% rename(ladcd = LAD17CD), 
+        rs=1e-4
+    )
+    # the values that will be used as covariates in logit regression later
+    results.covar <- results.lm %>%
+        transmute(
+            ladcd = ladcd,
+            Disposable_Income_last = c_last,
+            Disposable_Income_RelChange_first = m / c_first
+        ) %>%
+        mutate_if(is.numeric, round, digits=4)
+
+    # match first/last with appropriate year in column names
+    colnames(results.covar) <- str_replace_all(
+        names(results.covar),
+        c(
+            'first' = paste0('20', years[1]),
+            'last' = paste0('20', tail(years, n=1))
+        )
+    )
+
+    return(results.covar)
+}
+
+fulltime_income_lm <- function(lad_codes) {
+    fn.fulltime <- paste(
+        data_loc, 'economic',
+        'uk_fulltime_median_gross_income_1116.csv', sep='/'
+    )
+    fulltime <- read_csv(fn.fulltime, skip=9, n_max=326) %>%
+        filter(str_detect(mnemonic, '^E')) %>%
+        mutate_all(., ~str_replace(., '^[#!-]$', 'NA')) %>%
+        type_convert() %>%
+        filter(!is.na(`2011`))
+
+    # rename columns
+    years <- names(fulltime)[seq(3, dim(fulltime)[2], 2)]
+    colnames(fulltime) <- c(
+        'ladnm', 'ladcd',
+        paste(
+            rep(c('income_est', 'income_ci'), length(years)),
+            rep(years, each=2), sep='_'
+        )
+    )
+    # NOTE: some of the districts are counties rather than local authorities.
+    # Just easier to keep the naming convention and make sure its fixed later
+
+    cpih <- indexed_april_cpih()
+    for (j in 1:dim(cpih)[1]) {
+        # Convert confidence interval from % to pounds
+        fulltime[,2+2*j] <- (fulltime[,2+2*j]/100)*fulltime[,1+2*j]
+        # Adjust the income values for CPIH
+        fulltime[,1:2+2*j] <- fulltime[,1:2+2*j] / cpih$cpih_value[j]
+    }
+
+    ## Run simple linear time series regression for each LAD
+    results.lm <- time_series_lm(fulltime, rs=1e-2)
+    results.covar <- results.lm %>%
+        transmute(
+            CD = ladcd,
+            Fulltime_Income_RelChange_first = m / c_first
+        ) %>%
+        mutate_if(is.numeric, round, digits=4)
+
+    # match first/last with appropriate year in column names
+    colnames(results.covar) <- str_replace_all(
+        names(results.covar),
+        c('first'=years[1], 'last'=tail(years, n=1))
+    )
+
+    # Connect regression results to the appropriate LAD or CTY code
+    results.lad <- lad_codes %>%
+        inner_join(results.covar, by=c('LAD17CD'='CD'))
+    results.cty <- lad_codes %>%
+        inner_join(results.covar, by=c('CTY17CD'='CD'))
+    # combine values back together
+    results <- bind_rows(results.lad, results.cty) %>%
+        select(matches('LAD17CD|Fulltime_Income')) %>%
+        rename(ladcd = LAD17CD)
+
+    return(results)
+}
