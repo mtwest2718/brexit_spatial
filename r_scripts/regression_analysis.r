@@ -121,7 +121,7 @@ data <- list(
 ####----------------------------------------------------------------------####
 
 # Response and Design matrix
-data.XY <- data[ , c(9:58,68:70)]
+data.XY <- data[ , c(9:71,81:83)]
 # Centering and scaling the design matrix for easier variable comparison
 data.xy <- data.XY
 data.xy[ ,-c(1:3)] <- data.xy[ ,-c(1:3)] %>% scale(center=TRUE, scale=TRUE)
