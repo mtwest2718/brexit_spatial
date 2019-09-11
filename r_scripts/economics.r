@@ -24,12 +24,12 @@ deprivation_avgs <- function(data_loc) {
         select(matches('code|poor condition'))
 
     ## Crime score
-    fn.crime <- paste(
+    fn.scores <- paste(
         data_loc, 'economic',
         'File_5_ID_2015_Scores_for_the_Indices_of_Deprivation.xlsx', sep='/'
     )
-    crime <- read_excel(fn.crime, sheet='ID2015 Scores', n_max=32850) %>%
-        select(matches('code|Crime'))
+    scores <- read_excel(fn.scores, sheet='ID2015 Scores', n_max=32850) %>%
+        select(matches('code|^(Crime|Income) Score'))
 
     ## Population values at the LSOA level
     fn.pop <- paste(
@@ -46,7 +46,7 @@ deprivation_avgs <- function(data_loc) {
         )
 
     ## Putting everything together
-    depriv <- list(edu, health, barriers, living_env, crime, pop) %>%
+    depriv <- list(edu, health, barriers, living_env, scores, pop) %>%
         purrr::reduce(
             inner_join, by=c('LSOA code (2011)', 'Local Authority District code (2013)')
         )
@@ -55,14 +55,31 @@ deprivation_avgs <- function(data_loc) {
         'lsoa11cd', 'lad13cd', 'leave_before_gcse', 'life_lost_indicator',
         'disability', 'acute_morbidity', 'mental_health', 'dist_to_market',
         'dist_to_gp', 'overcrowding', 'homelessness', 'housing_affordability',
-        'poor_housing', 'crime_score', 'total_pop', 'children'
+        'poor_housing', 'crime_score', 'income_score', 'total_pop', 'children'
     )
-    depriv <- depriv %>% inner_join(sum_pop, by='lad13cd')
+    
+    ## What portion of a district lives in an LSOA in the worst quartile
+    quartile <- depriv %>% select(-matches('^lad|total|child|homeless'))
+    for (i in 2:dim(quartile)[2]) {
+        qrt1 <- sort(as.matrix(quartile[,i]), decreasing=TRUE)[dim(depriv)[1]/4]
+        quartile[,i] <- ifelse(quartile[,i] >= qrt1, 1, 0)
+    }
+    # append quartile-1 to column name
+    colnames(quartile)[-1] <- paste(
+        names(quartile)[-1], rep('qrt1', dim(quartile)[2]-1), sep='_'
+    )
 
     # summary stats for each Local Authority
     depriv.lad <- depriv %>%
-        mutate_at(vars(c('leave_before_gcse')), ~(. * children/sum_child)) %>%
-        mutate_at(vars(names(depriv)[4:14]), ~(. * total_pop/sum_total)) %>%
+        inner_join(quartile, by='lsoa11cd') %>%
+        inner_join(sum_pop, by='lad13cd') %>%
+        mutate_at(
+            vars(matches('^leave_before_gcse')), ~(. * children/sum_child)
+        ) %>%
+        mutate_at(
+            vars(-matches('cd$|total|child|gcse')), 
+            ~(. * total_pop/sum_total)
+        ) %>%
         select(-c(total_pop, children, sum_total, sum_child, lsoa11cd)) %>%
         group_by(lad13cd) %>%
         summarise_if(is.numeric, sum)
