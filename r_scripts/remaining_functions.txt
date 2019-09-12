@@ -1,0 +1,16 @@
+REMAINING SECTIONS
+- discretionary_income
+- manufacturing_job_loss
+
+NEW STUFF TO INCLUDE
+- break income into subgroups
+- expand job loss to other industries
+- GPs per 10k people
+- Chinese import shock
+- housing price vs income & change over time
+    -- housing affordability deprivation gives me price/income already
+    -- question is whether I want to do the time change
+- employment rate
+- percentage that are students
+- percentage that are retired
+- funding from EU
