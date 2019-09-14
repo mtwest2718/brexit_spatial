@@ -1,6 +1,7 @@
 library(readxl)
 library(purrr)
 library(dplyr)
+library(stringr)
 
 source('ons_codes.r')
 source('demographics.r')
@@ -57,7 +58,7 @@ deprivation_avgs <- function(data_loc) {
         'dist_to_gp', 'overcrowding', 'homelessness', 'housing_affordability',
         'poor_housing', 'crime_score', 'income_score', 'total_pop', 'children'
     )
-    
+
     ## What portion of a district lives in an LSOA in the worst quartile
     quartile <- depriv %>% select(-matches('^lad|total|child|homeless'))
     for (i in 2:dim(quartile)[2]) {
@@ -77,7 +78,7 @@ deprivation_avgs <- function(data_loc) {
             vars(matches('^leave_before_gcse')), ~(. * children/sum_child)
         ) %>%
         mutate_at(
-            vars(-matches('cd$|total|child|gcse')), 
+            vars(-matches('cd$|total|child|gcse')),
             ~(. * total_pop/sum_total)
         ) %>%
         select(-c(total_pop, children, sum_total, sum_child, lsoa11cd)) %>%
@@ -180,7 +181,7 @@ council_cuts <- function(data_loc) {
             sep='/'
         )
         pop <- get_yearly_img(fn.pop) %>%
-            rename(CD = LAD17CD) %>%
+            rename(CD = ladcd) %>%
             select(matches('^(CD|All_est)'))
         colnames(pop)[2] <- paste('total_pop', y, sep='_')
         # match population estimates to local authority codes
@@ -378,7 +379,7 @@ disposable_income_lm <- function(data_loc) {
     #------------------------------------------------------------------------#
     ## Linear Regression for each LAD's income time series
     results.lm <- time_series_lm(
-        income.all_yrs %>% rename(ladcd = LAD17CD), 
+        income.all_yrs %>% rename(ladcd = LAD17CD),
         rs=1e-4
     )
     # the values that will be used as covariates in logit regression later
@@ -459,4 +460,60 @@ fulltime_income_lm <- function(lad_codes) {
         rename(ladcd = LAD17CD)
 
     return(results)
+}
+
+recession_job_loss <- function(data_loc) {
+    # Get local authority and county codes to match data with proper locations
+    lad_codes <- lad_codes(data_loc) %>%
+        select(LAD17CD, CTY17CD)
+    
+    # names of different industry collections based on SIC 2007 standard
+    sic <- c(
+        'agriculture_fish', 'energy_water', 'manufacturing', 'construction', 
+        'distr_hotel_restaurant', 'transport_comms', 'banking_insurance', 
+        'admin_edu_health', 'other_services'
+    )
+    
+    fn.ind <- paste(
+        data_loc, 'economic',
+        'nomis_2007-11_industry_percentage.xlsx', sep='/'
+    )
+    # getting region codes from first sheet
+    jobs <- read_excel(fn.ind, skip=7, sheet='Sheet 0') %>%
+        rename(NM = `...1`, CD = `...2`) %>%
+        select(CD, NM)
+    
+    ## Looping over industries
+    for (s in 1:length(sic)) {
+        sheet <- paste0('Sheet ', s-1)
+        # Load % of workforce from 2007 & 2011 for particular industry
+        industry <- read_excel(fn.ind, skip=7, sheet=sheet) %>% 
+            rename(NM = `...1`, CD = `...2`) %>%
+            select(matches('^(CD|NM|percent)')) %>%
+            filter(str_detect(CD, '^E'))
+        colnames(industry)[3:4] <- c('pct_2007', 'pct_2011')
+        
+        # Replace missing entries with base sample level of 0.2%
+        industry <- industry %>% 
+            mutate_all(., ~str_replace(., '^[#!~-]$', '0.2')) %>%
+            type.convert() %>%
+            mutate(pct_change = pct_2011 - pct_2007) %>%
+            select(CD, NM, pct_2007, pct_change) %>%
+            mutate_if(is.factor, as.character)
+        colnames(industry)[3:4] <- str_replace(names(industry)[3:4], '^pct', sic[s])
+            
+        jobs <- jobs %>% inner_join(industry, by=c('CD', 'NM'))
+    }
+    
+    # Connect job percentages to LAD/CTY codes
+    lad <- lad_codes %>% inner_join(jobs, by=c('LAD17CD'='CD'))
+    cty <- lad_codes %>% inner_join(jobs, by=c('CTY17CD'='CD'))
+    # combine tables back together
+    job.pct <- bind_rows(lad, cty) %>%
+        filter(!str_detect(LAD17CD, 'E0(9000001|6000053)')) %>%
+        select(-c(CTY17CD, NM)) %>% 
+        rename(ladcd = LAD17CD)
+    # NOTE: dropping 'City of London' and 'Isle of Scilly' here
+        
+    return(job.pct)
 }

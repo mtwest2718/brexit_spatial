@@ -25,7 +25,7 @@ source('economics.r')
 source('spatial_neighbors.r')
 
 # Where the data files are located
-data_loc <- '/home/mtwest2718/Documents/research/brexit_spatial/data_sets'
+data_loc <- '/home/mtwest/Documents/brexit_spatial/data_sets'
 
 ####----------------------------------------------------------------------####
 #                       Load covariate data from files                       #
@@ -78,6 +78,8 @@ housing <- housing_tenure(data_loc) %>% rename(ladcd = lad11cd)
 
 # Change in the unemployment figures for each district
 unemployment <- unemployment_lm(data_loc)
+# Change in % of population in a particular industry during Great Recession
+industries <- recession_job_loss(data_loc)
 
 ## Demographics at LAD level ---------------------------------------------- ##
 # % of pop in voting-age brackets: 18-29, 30-44, 45-64, 65+
@@ -105,7 +107,7 @@ ethnicity <- ethnic_demography_lm(data_loc) %>% select(-c(ladnm))
 data <- list(
     english_lads, votes, local_worker_pct, benefit_cuts, depriv_stats,
     spending_cuts, housing, unemployment, age, qualifications, englishness,
-    immigrants, ethnicity, disp_income,
+    immigrants, ethnicity, disp_income, industries,
     english_bnds
 ) %>%
     purrr::reduce(inner_join, by='ladcd') %>%
@@ -121,7 +123,7 @@ data <- list(
 ####----------------------------------------------------------------------####
 
 # Response and Design matrix
-data.XY <- data[ , c(9:71,81:83)]
+data.XY <- data[ , c(9:89,99:101)]
 # Centering and scaling the design matrix for easier variable comparison
 data.xy <- data.XY
 data.xy[ ,-c(1:3)] <- data.xy[ ,-c(1:3)] %>% scale(center=TRUE, scale=TRUE)
