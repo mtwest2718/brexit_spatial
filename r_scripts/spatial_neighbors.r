@@ -82,10 +82,6 @@ reduce_neighbors <- function(lad.counts) {
         mutate_at(vars(c('r_ratio', 'w_ratio')), ~ifelse(. > 1,1, .)) %>%
         ungroup() %>%
         filter(r_ratio > thresh | w_ratio > thresh) %>%
-        filter_at(
-            vars(c('cd.reside', 'cd.work')),
-            all_vars( !str_detect(., 'E06000053|E09000001') )
-        ) %>%
         mutate_if(is.numeric, round, digits=5)
     # NOTE: r_pct is the percentage of residents of 1 that work in 2
     # w_pct is the percentage of workers in 2 that live in 1
@@ -208,7 +204,7 @@ commuter_map <- function(sf.obj, bnds) {
         geom_segment(
             data=NB,
             mapping=aes(x=long.x, y=lat.x, xend=long.y, yend=lat.y),
-            colour='red', size=NB$weights*2
+            colour='red', size=NB$weights
         )
     return(map.commute)
 }
