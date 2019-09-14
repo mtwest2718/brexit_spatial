@@ -1,0 +1,72 @@
+---
+title: "Defining *spatial closeness* with commuter flow rates"
+subtitle: "Everything is related to everything else, but near things are more related than distant things. (Tobler, 1970)"
+author: "Matthew T. West"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  beamer_presentation:
+    latex_engine: xelatex
+    theme: "metropolis"
+    colortheme: "metropolis"
+    fonttheme: "metropolis"
+bibliography: "references.bib"
+csl: british-journal-of-political-science.csl
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, comment=NA, fig.pos='H')
+knitr::opts_knit$set(root.dir='~/Documents/brexit_spatial/r_scripts')
+```
+
+```{r setup, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE}
+# Load libraries
+package_names <- c('readr', 'dplyr', 'ggplot2', 'knitr', 'knitcitations')
+for (pkg in package_names) {
+    library(pkg, character.only=TRUE, quietly=TRUE, verbose=FALSE)
+}
+
+# Root directory where all data in repo is located
+data_loc <- '~/Documents/brexit_spatial/data_sets'
+# Needed functions to process spatial objects
+source('spatial_neighbors.r')
+```
+
+## Adjacency/Neighbourhood matrix:  $W_{ij}$
+```{r spdep_obj, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE}
+lad.counts <- lad_commuters_2011(data_loc)
+# compute percentage flow rates and filter list
+nb.pcts <- reduce_neighbors(lad.counts)
+# percentages for commuters who work in the district they reside
+local_worker_pct <- nb.pcts %>%
+    filter(cd.work == cd.reside) %>%
+    rename(ladcd = cd.work) %>%
+    select(ladcd, r_pct, w_pct)
+
+# construct spatial objects with binary weights via spdep
+nb.obj <- define_neighbors(nb.pcts, symm=TRUE, w_type='pct', thresh=0.015)
+# Get boundary polygons for english districts
+english_bnds <- boundary_polygons(data_loc) %>%
+    filter(str_detect(lad16cd, '^E0')) %>%
+    select(-c(lad16nm))
+```
+
+ - Standard protocol
+    + Districts $D_i$ and $D_j$ are have a non-zero weight if they share a common border
+    + Weights are binary
+ - Proposed alternative
+    + $w_{ij} =$ % of residents of district $D_i$ that work in $D_j$
+    + $\tilde{w}_{ij} =$ % of workers in $D_i$ that reside in $D_j$
+    + $W_{ij} = \max \left(\tilde{w}_{ij}, w_{ij} \right)$
+    + $\mathbf{W} = \max\left(W, W^{\text{T}} \right)$
+ - Any element of $\mathbf{W}$ below a given threshold is set to zero
+    + Set threshold so all districts have at least one link
+    + With 1.5% threshold: `r dim(nb.obj$sn)[1]` nonzero links across `r attr(nb.obj$sn, 'n')` districts
+
+
+## Map of English LAD "Neighbours" 
+
+```{r commuter_map, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE, fig.echo=TRUE, out.width='100%', fig.align="center"}
+
+map <- commuter_map(nb.obj, english_bnds)
+map
+```
