@@ -198,7 +198,7 @@ commuter_map <- function(sf.obj, bnds) {
     map.commute <- ggplot(data=bnds) +
         theme_bw(base_family='serif', base_size=25) +
         geom_sf(color='black', size=0.2) +
-        coord_sf(crs=4326, xlim=c(-6,2), ylim=c(50,56)) +
+        coord_sf(crs=4326, xlim=c(-6.5,2), ylim=c(50,56)) +
         xlab("Longitude") +
         ylab("Latitude") +
         geom_segment(

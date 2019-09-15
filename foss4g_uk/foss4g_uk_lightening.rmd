@@ -1,6 +1,6 @@
 ---
 title: "Defining *spatial closeness* with commuter flow rates"
-subtitle: "Everything is related to everything else, but near things are more related than distant things. (Tobler, 1970)"
+subtitle: "Leveraging 2011 UK Census data for spatial regression modeling"
 author: "Matthew T. West"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -9,7 +9,6 @@ output:
     theme: "metropolis"
     colortheme: "metropolis"
     fonttheme: "metropolis"
-bibliography: "references.bib"
 csl: british-journal-of-political-science.csl
 ---
 
@@ -31,7 +30,7 @@ data_loc <- '~/Documents/brexit_spatial/data_sets'
 source('spatial_neighbors.r')
 ```
 
-## Adjacency/Neighbourhood matrix:  $W_{ij}$
+## Relationship between separated observations
 ```{r spdep_obj, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE}
 lad.counts <- lad_commuters_2011(data_loc)
 # compute percentage flow rates and filter list
@@ -50,22 +49,21 @@ english_bnds <- boundary_polygons(data_loc) %>%
     select(-c(lad16nm))
 ```
 
- - Standard protocol
-    + Districts $D_i$ and $D_j$ are have a non-zero weight if they share a common border
-    + Weights are binary
- - Proposed alternative
-    + $w_{ij} =$ % of residents of district $D_i$ that work in $D_j$
-    + $\tilde{w}_{ij} =$ % of workers in $D_i$ that reside in $D_j$
-    + $W_{ij} = \max \left(\tilde{w}_{ij}, w_{ij} \right)$
-    + $\mathbf{W} = \max\left(W, W^{\text{T}} \right)$
- - Any element of $\mathbf{W}$ below a given threshold is set to zero
-    + Set threshold so all districts have at least one link
-    + With 1.5% threshold: `r dim(nb.obj$sn)[1]` nonzero links across `r attr(nb.obj$sn, 'n')` districts
+I work with Bayesian spatial CAR models to investigate the socioeconomic forces underlaying the results of recent \alert{contentious} UK popular referenda at the local authority district (LAD) level. 
 
+ - SOP of defining *closeness* by border contiguity misses two facts
+    + Borders are often drawn to mirror physical barriers
+    + Modern transit allows people to travel great distances regularly
+ - *Proposal* for adjacency weights matrix: $W_{ij}$
+    + $w_{ij} =$ % of residents of district $i$ that work in district $j$
+    + $\tilde{w}_{ij} =$ % of workers in $j$ that reside in $i$
+    + $W_{ij} = \max \left(w_{ij}, \tilde{w}_{ij} \right)$
+ - R packages used: `sf, spdep, readr, dplyr, ggplot2`
 
-## Map of English LAD "Neighbours" 
+One can still force $W$ to be *symmetric* and/or have *binary* weights.
 
-```{r commuter_map, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE, fig.echo=TRUE, out.width='100%', fig.align="center"}
+## Links between spatially related English LADs
+```{r commuter_map, echo=FALSE, eval=TRUE, warning=FALSE, message=FALSE, fig.echo=TRUE, out.width='80%', fig.align="center", fig.cap="The grey polygons represent the 326 LADs in England. The red lines represent the 3286 unique links between districts with $W_{ij} > 0.015$ with the line thickness being related to the entry's weight value."}
 
 map <- commuter_map(nb.obj, english_bnds)
 map
