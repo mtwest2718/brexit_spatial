@@ -2,6 +2,7 @@
 title: "Defining *spatial closeness* with commuter flow rates"
 subtitle: "Leveraging 2011 UK Census data for spatial regression modeling"
 author: "Matthew T. West"
+institute: "University of Glasgow"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   beamer_presentation:
@@ -49,7 +50,7 @@ english_bnds <- boundary_polygons(data_loc) %>%
     select(-c(lad16nm))
 ```
 
-I work with Bayesian spatial CAR models to investigate the socioeconomic forces underlaying the results of recent \alert{contentious} UK popular referenda at the local authority district (LAD) level. 
+I work with Bayesian spatial CAR models to investigate the socioeconomic forces underlaying the results of recent \alert{contentious} UK popular referenda at the local authority district (LAD) level.
 
  - SOP of defining *closeness* by border contiguity misses two facts
     + Borders are often drawn to mirror physical barriers
@@ -58,7 +59,6 @@ I work with Bayesian spatial CAR models to investigate the socioeconomic forces 
     + $w_{ij} =$ % of residents of district $i$ that work in district $j$
     + $\tilde{w}_{ij} =$ % of workers in $j$ that reside in $i$
     + $W_{ij} = \max \left(w_{ij}, \tilde{w}_{ij} \right)$
- - R packages used: `sf, spdep, readr, dplyr, ggplot2`
 
 One can still force $W$ to be *symmetric* and/or have *binary* weights.
 
@@ -68,3 +68,16 @@ One can still force $W$ to be *symmetric* and/or have *binary* weights.
 map <- commuter_map(nb.obj, english_bnds)
 map
 ```
+
+## Thank You
+
+### Resources
+ - R packages used: `sf, spdep, tidyverse, STAN, CARBayes`
+ - Open data from across UK government: ONS, HMRC, etc
+ - Github repository: \href{https://github.com/mtwest2718/brexit_spatial}{link}
+ - Email address: \href{mailto:mtwest2718@protonmail.com}{mtwest2718@protonmail.com}
+ - Twitter handle: \href{https://twitter.com/westbynoreaster}{westbynoreaster}
+
+### Any Questions?
+
+ - And do \alert{NOT} think about the \alert{EVENT}!!!
